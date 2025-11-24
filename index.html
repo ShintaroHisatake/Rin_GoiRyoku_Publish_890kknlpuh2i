@@ -7,7 +7,7 @@
 
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>2語句学習アプリ</title>
+  <title>語句学習アプリ</title>
 
   <!-- ライブラリ読み込み -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -37,7 +37,8 @@
   <script type="text/babel" data-presets="env,react">
     const { useEffect, useState } = React;
 
-    const Modes = { VIEW: "VIEW", MCQ: "MCQ" };
+    // ==== モード・グループ定義（★ mode3 追加）====
+    const Modes = { VIEW: "VIEW", MCQ: "MCQ", FILL: "FILL" };
     const Groups = { DAY: "DAY", WEEK: "WEEK" };
 
     const fetchJson = async (path) => {
@@ -58,6 +59,22 @@
       }
       return a;
     };
+
+    // 例文の中の語句を「（　　　）」に差し替える
+    function makeBlankExample(example, term) {
+      if (!example) return "";
+      if (!term) return example;
+      const idx = example.indexOf(term);
+      if (idx === -1) {
+        // 見つからない場合は最後に空欄を付ける
+        return example.replace(/。?$/, "（　　　）$&");
+      }
+      return (
+        example.slice(0, idx) +
+        "（　　　）" +
+        example.slice(idx + term.length)
+      );
+    }
 
     // ========= ルートコンポーネント =========
     function App() {
@@ -156,16 +173,15 @@
               >
                 <option value={Modes.VIEW}>モード1：語句・意味・例文を表示</option>
                 <option value={Modes.MCQ}>モード2：意味→語句（10択）</option>
+                <option value={Modes.FILL}>モード3：例文穴埋め</option>
               </select>
             </div>
           </header>
 
           <main className="rounded-2xl border bg-white p-6 shadow-sm">
-            {mode === Modes.VIEW ? (
-              <ModeView items={activeItems} />
-            ) : (
-              <ModeMCQ items={activeItems} />
-            )}
+            {mode === Modes.VIEW && <ModeView items={activeItems} />}
+            {mode === Modes.MCQ && <ModeMCQ items={activeItems} />}
+            {mode === Modes.FILL && <ModeFill items={activeItems} />}
           </main>
 
           <footer className="text-center text-xs text-slate-500">
@@ -258,7 +274,6 @@
       const currentIndex = order[qIdx];
       const current = items[currentIndex];
 
-      // useMemo をやめて、普通の関数で選択肢を計算（フック数を固定）
       const buildOptions = () => {
         const indices = items.map((_, i) => i);
         const others = indices.filter((i) => i !== currentIndex);
@@ -338,6 +353,131 @@
                   {current.example}
                 </div>
               )}
+              <div className="mt-3">
+                <button
+                  className="px-4 py-2 rounded-xl bg-slate-900 text-white"
+                  onClick={nextQ}
+                >
+                  次の問題へ →
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ========= モード3：例文穴埋め =========
+    function ModeFill({ items }) {
+      const [order, setOrder] = useState(() =>
+        shuffle(items.map((_, i) => i))
+      );
+      const [qIdx, setQIdx] = useState(0);
+      const [input, setInput] = useState("");
+      const [feedback, setFeedback] = useState(null); // {correct, item}
+      const [score, setScore] = useState(0);
+      const [tried, setTried] = useState(0);
+
+      useEffect(() => {
+        setOrder(shuffle(items.map((_, i) => i)));
+        setQIdx(0);
+        setInput("");
+        setFeedback(null);
+        setScore(0);
+        setTried(0);
+      }, [items]);
+
+      const total = items.length;
+      if (!total) {
+        return <div className="text-slate-600">この範囲に項目がありません。</div>;
+      }
+
+      const currentIndex = order[qIdx];
+      const current = items[currentIndex];
+
+      const handleSubmit = () => {
+        if (!current) return;
+        const ans = (current.term || "").replace(/\s/g, "");
+        const user = (input || "").replace(/\s/g, "");
+        const ok = user === ans;
+        setFeedback({ correct: ok, item: current });
+        setTried((n) => n + 1);
+        if (ok) setScore((s) => s + 1);
+      };
+
+      const nextQ = () => {
+        setFeedback(null);
+        setInput("");
+        setQIdx((v) => (v + 1 >= order.length ? 0 : v + 1));
+      };
+
+      const blankExample = makeBlankExample(current.example || "", current.term);
+
+      return (
+        <div className="grid gap-6">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="px-2 py-1 rounded-full bg-slate-100">
+              問題 {qIdx + 1} / {order.length}
+            </span>
+            <span className="ml-auto px-2 py-1 rounded-full bg-slate-900 text-white">
+              正答 {score} / {tried}
+            </span>
+          </div>
+
+          <div>
+            <div className="text-xs text-slate-500">例文（空欄に入る語句を入力）</div>
+            <div className="text-base md:text-lg leading-relaxed mt-1">
+              {blankExample}
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            <label className="text-sm text-slate-600">
+              語句を入力
+            </label>
+            <input
+              type="text"
+              className="px-4 py-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-4 focus:ring-slate-100"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (!feedback) handleSubmit();
+                }
+              }}
+            />
+          </div>
+
+          {!feedback && (
+            <div>
+              <button
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white"
+                onClick={handleSubmit}
+              >
+                判定（Enter）
+              </button>
+            </div>
+          )}
+
+          {feedback && (
+            <div className="rounded-xl border p-4 bg-slate-50">
+              <div className={"font-bold " + (feedback.correct ? "text-emerald-700" : "text-rose-700")}>
+                {feedback.correct ? "正解！" : "不正解"}
+              </div>
+              <div className="mt-2 text-sm text-slate-700">
+                <div>
+                  正解：<span className="font-semibold">{feedback.item.term}</span>
+                </div>
+                <div className="mt-1">
+                  意味：{feedback.item.meaning}
+                </div>
+                {feedback.item.example && (
+                  <div className="mt-2">
+                    例文：{feedback.item.example}
+                  </div>
+                )}
+              </div>
               <div className="mt-3">
                 <button
                   className="px-4 py-2 rounded-xl bg-slate-900 text-white"
