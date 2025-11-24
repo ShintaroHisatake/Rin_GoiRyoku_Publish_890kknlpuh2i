@@ -1,98 +1,278 @@
-# -*- coding: utf-8 -*-
-"""
-week1.pdf を OCR して素データを作り、手直ししやすい JSON にまとめます。
-初回は「推定抽出（粗い）」→ data/week1_raw.json と
-人手整形用の「雛形」→ data/week1.json を同時に生成します。
-"""
-import json, os, re
-from pathlib import Path
-from pdf2image import convert_from_path
-import pytesseract
-from PIL import Image
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>語句学習アプリ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <meta name="color-scheme" content="light only"/>
+</head>
+<body class="bg-slate-50">
+  <div id="root" class="min-h-screen"></div>
 
-PDF_PATH = Path("week1.pdf")             # 先に同階層に置く（GitHubなら /data ではなく scripts/ の外に）
-OUT_DIR  = Path("data")
-OUT_DIR.mkdir(exist_ok=True, parents=True)
+  <script type="text/babel" data-presets="react">
+    const {useEffect, useMemo, useRef, useState} = React;
 
-DAY_SPLIT = {
-    # ページ番号は 1 始まり。ファイルの実ページ区切りに合わせて調整してください。
-    # ここではアップロードPDFの12ページを DAY1-6×2ページ の想定にセットしています。
-    "DAY1": [1,2],
-    "DAY2": [3,4],
-    "DAY3": [5,6],
-    "DAY4": [7,8],
-    "DAY5": [9,10],
-    "DAY6": [11,12],
-}
+    // ================== ユーティリティ ==================
+    const Modes = { VIEW:"VIEW", MCQ:"MCQ" }; // モード1/2
+    const Groups = { DAY:"DAY", WEEK:"WEEK" };
 
-def ocr_image(img: Image.Image) -> str:
-    # 高解像度化 & 二値化の軽い前処理
-    img = img.convert("L")
-    text = pytesseract.image_to_string(img, lang="jpn")
-    return text
+    const fetchJson = async (path) => {
+      const res = await fetch(path, { cache:"no-store" });
+      if (!res.ok) throw new Error(`${path} を取得できません（${res.status}）`);
+      return await res.json();
+    };
 
-def parse_candidates(text: str):
-    """
-    ゆるいヒューリスティクス。
-    - 語句: 行頭/括弧/太字っぽい単語は抽出が難しいため、ひらがな/カタカナ/漢字の連続を候補に。
-    - 意味/例文: 「。」や「〜する」「…こと」を含む短文を候補に。
-    最終的には人手で week1.json を整形する前提。
-    """
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
-    # 候補語句：記号を除いた短い日本語トークン
-    word_re = re.compile(r"^[\u3040-\u30FF\u4E00-\u9FFF]{2,8}$")
-    sentence_re = re.compile(r".+。$")
-    words = [l for l in lines if word_re.match(l)]
-    sentences = [l for l in lines if sentence_re.match(l)]
-    return {"words": words, "sentences": sentences, "raw_lines": lines}
+    const shuffle = (arr) => {
+      const a = [...arr];
+      for (let i=a.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [a[i],a[j]]=[a[j],a[i]];
+      }
+      return a;
+    };
 
-def main():
-    if not PDF_PATH.exists():
-      raise SystemExit(f"PDF not found: {PDF_PATH.resolve()}")
+    // ================== データ構造 ==================
+    // week1.json は { days:[ {id:"DAY1", label:"DAY 1", items:[{term, meaning, example}] }, ... ], week:{id:"WEEK1", items:[...] } }
+    // 例: scripts/extract_week1.py が出力（後述）
 
-    print("Converting PDF -> images...")
-    pages = convert_from_path(str(PDF_PATH), dpi=300)
+    // ================== ルート ==================
+    function App(){
+      const [data, setData] = useState(null);
+      const [error, setError] = useState("");
+      const [group, setGroup] = useState(Groups.DAY);     // DAY or WEEK
+      const [dayId, setDayId] = useState("DAY1");         // DAY選択時のみ有効
+      const [mode, setMode] = useState(Modes.VIEW);       // モード1/2
+      const [loading, setLoading] = useState(false);
 
-    days = []
-    week_items = []
+      useEffect(()=>{
+        (async()=>{
+          try{
+            setLoading(true);
+            // 生成したJSONを読む（パスはリポジトリ内の相対パス）
+            const j = await fetchJson("./data/week1.json");
+            setData(j);
+          }catch(e){
+            setError(e.message || String(e));
+          }finally{ setLoading(false); }
+        })();
+      },[]);
 
-    raw_dump = {}
+      if (error){
+        return (
+          <div className="max-w-3xl mx-auto p-6">
+            <h1 className="text-2xl font-bold mb-3">読み込みエラー</h1>
+            <p className="text-red-600 whitespace-pre-wrap">{error}</p>
+            <p className="mt-3 text-sm text-slate-600">先に <code>scripts/extract_week1.py</code> を実行して <code>data/week1.json</code> を作成してください。</p>
+          </div>
+        );
+      }
+      if (loading || !data){
+        return <div className="p-6 text-slate-600">データ読み込み中…</div>;
+      }
 
-    for day_id, page_ids in DAY_SPLIT.items():
-        all_text = []
-        for p in page_ids:
-            img = pages[p-1]
-            txt = ocr_image(img)
-            all_text.append(txt)
-            raw_dump[f"{day_id}-p{p}"] = txt
+      const dayOptions = data.days?.map(d=>({value:d.id, label:d.label})) ?? [];
+      const activeItems = useMemo(()=>{
+        if (group===Groups.WEEK) return data.week.items;
+        const day = data.days.find(d => d.id===dayId);
+        return day ? day.items : [];
+      }, [data, group, dayId]);
 
-        text = "\n".join(all_text)
-        cands = parse_candidates(text)
+      return (
+        <div className="max-w-5xl mx-auto p-6 grid gap-6">
+          <header className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-2xl md:text-3xl font-bold">語句学習アプリ</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="px-3 py-2 rounded-xl border bg-white"
+                value={group}
+                onChange={(e)=>setGroup(e.target.value)}
+                title="Day/Week切替"
+              >
+                <option value={Groups.DAY}>Dayごと</option>
+                <option value={Groups.WEEK}>週ごと（全体）</option>
+              </select>
 
-        # ざっくり雛形（初期は語句候補だけ入れておく）
-        items = []
-        for w in cands["words"][:20]:  # 最初の候補20件に制限（後で人手整形）
-            items.append({"term": w, "meaning": "", "example": ""})
+              {group===Groups.DAY && (
+                <select
+                  className="px-3 py-2 rounded-xl border bg-white"
+                  value={dayId}
+                  onChange={(e)=>setDayId(e.target.value)}
+                  title="Day選択"
+                >
+                  {dayOptions.map(opt=>(
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              )}
 
-        days.append({"id": day_id, "label": day_id.replace("DAY","DAY "), "items": items})
-        week_items.extend(items)
+              <select
+                className="px-3 py-2 rounded-xl border bg-white"
+                value={mode}
+                onChange={(e)=>setMode(e.target.value)}
+                title="モード選択"
+              >
+                <option value={Modes.VIEW}>モード1：語句・意味・例文を表示</option>
+                <option value={Modes.MCQ}>モード2：意味→語句（10択）</option>
+              </select>
+            </div>
+          </header>
 
-    # 生OCRも保存（確認用）
-    with open(OUT_DIR/"week1_raw.json", "w", encoding="utf-8") as f:
-        json.dump(raw_dump, f, ensure_ascii=False, indent=2)
+          <main className="rounded-2xl border bg-white p-6 shadow-sm">
+            {mode===Modes.VIEW
+              ? <ModeView items={activeItems}/>
+              : <ModeMCQ items={activeItems}/>
+            }
+          </main>
 
-    # 雛形データ
-    out = {
-        "meta": {"title": "Week 1 語句（雛形）", "source": str(PDF_PATH)},
-        "days": days,
-        "week": {"id": "WEEK1", "items": week_items}
+          <footer className="text-center text-xs text-slate-500">
+            <p>© {new Date().getFullYear()} 語句学習</p>
+          </footer>
+        </div>
+      );
     }
-    with open(OUT_DIR/"week1.json", "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=2)
 
-    print("Generated:")
-    print(f" - {OUT_DIR/'week1_raw.json'}  # ページごとの生OCR")
-    print(f" - {OUT_DIR/'week1.json'}      # アプリで読む雛形（要整形）")
+    // ================== モード1：閲覧 ==================
+    function ModeView({items}){
+      const [i, setI] = useState(0);
+      const total = items.length;
+      const cur = items[i];
 
-if __name__ == "__main__":
-    main()
+      if (!total) return <div className="text-slate-600">この範囲に項目がありません。</div>;
+
+      return (
+        <div className="grid gap-6">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="px-2 py-1 rounded-full bg-slate-100">項目 {i+1} / {total}</span>
+            <span className="ml-auto px-2 py-1 rounded-full bg-slate-900 text-white">全{total}件</span>
+          </div>
+
+          <div className="grid gap-4">
+            <div>
+              <div className="text-xs text-slate-500">語句</div>
+              <div className="text-3xl md:text-4xl font-extrabold">{cur.term}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">意味</div>
+              <div className="text-lg md:text-xl">{cur.meaning}</div>
+            </div>
+            {cur.example && (
+              <div>
+                <div className="text-xs text-slate-500">例文</div>
+                <div className="text-base leading-relaxed">{cur.example}</div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <button className="px-4 py-2 rounded-xl border bg-white" onClick={()=>setI(v=>v-1<0?total-1:v-1)}>← 前へ</button>
+            <button className="px-4 py-2 rounded-xl bg-slate-900 text-white" onClick={()=>setI(v=>v+1>=total?0:v+1)}>次へ →</button>
+          </div>
+        </div>
+      );
+    }
+
+    // ================== モード2：10択クイズ ==================
+    function ModeMCQ({items}){
+      const pool = useMemo(()=> items, [items]); // 出題範囲
+      const total = pool.length;
+      const [order, setOrder] = useState(()=> shuffle(pool.map((_,i)=>i)));
+      const [qIdx, setQIdx] = useState(0);
+      const [selected, setSelected] = useState(null);
+      const [correct, setCorrect] = useState(null);
+      const [score, setScore] = useState(0);
+
+      useEffect(()=>{ // itemsが変わったら初期化
+        setOrder(shuffle(items.map((_,i)=>i)));
+        setQIdx(0); setSelected(null); setCorrect(null); setScore(0);
+      }, [items]);
+
+      if (!total) return <div className="text-slate-600">この範囲に項目がありません。</div>;
+
+      const current = pool[order[qIdx]];
+
+      // 選択肢の作成（語句10個）
+      const optionIndices = useMemo(()=>{
+        const others = pool.map((_,i)=>i).filter(i=>i!==order[qIdx]);
+        const distractors = shuffle(others).slice(0, Math.max(0, 9)); // 残り9
+        return shuffle([order[qIdx], ...distractors]);
+      }, [order, qIdx, pool]);
+
+      const submit = (choiceIdx) => {
+        if (correct!==null) return; // 回答済み
+        setSelected(choiceIdx);
+        const ok = choiceIdx === order[qIdx];
+        setCorrect(ok);
+        if (ok) setScore(s=>s+1);
+      };
+
+      const nextQ = () => {
+        setSelected(null); setCorrect(null);
+        setQIdx(v => v+1>=order.length ? 0 : v+1);
+      };
+
+      return (
+        <div className="grid gap-6">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="px-2 py-1 rounded-full bg-slate-100">問題 {qIdx+1} / {total}</span>
+            <span className="ml-auto px-2 py-1 rounded-full bg-slate-900 text-white">正答 {score} / {qIdx + (correct!==null?1:0)}</span>
+          </div>
+
+          <div>
+            <div className="text-xs text-slate-500">意味</div>
+            <div className="text-lg md:text-xl">{current.meaning}</div>
+          </div>
+
+          <ol className="grid md:grid-cols-2 gap-3">
+            {optionIndices.map((idx, i) => {
+              const term = pool[idx].term;
+              const isChosen = selected!==null && idx===selected;
+              const isAnswer = selected!==null && idx===order[qIdx];
+              return (
+                <li key={i}>
+                  <button
+                    className={
+                      "w-full text-left px-4 py-3 rounded-xl border transition " +
+                      (isAnswer ? "bg-emerald-50 border-emerald-300" :
+                       isChosen ? "bg-rose-50 border-rose-300" : "bg-white hover:bg-slate-50 border-slate-300")
+                    }
+                    onClick={()=>submit(idx)}
+                    disabled={selected!==null}
+                  >
+                    <span className="mr-2 font-mono text-slate-500">{String.fromCharCode(65+i)}.</span>
+                    <span className="font-semibold">{term}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+
+          {selected!==null && (
+            <div className="rounded-xl border p-4 bg-slate-50">
+              <div className={"font-bold " + (correct ? "text-emerald-700" : "text-rose-700")}>
+                {correct ? "正解！" : "不正解"}
+              </div>
+              {current.example && (
+                <div className="mt-2 text-sm text-slate-700">
+                  <span className="font-medium">例文：</span>{current.example}
+                </div>
+              )}
+              <div className="mt-3">
+                <button className="px-4 py-2 rounded-xl bg-slate-900 text-white" onClick={nextQ}>次の問題へ →</button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App/>);
+  </script>
+
+  <noscript>このアプリを使うにはJavaScriptを有効にしてください。</noscript>
+</body>
+</html>
