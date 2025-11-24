@@ -7,7 +7,7 @@
 
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>語句学習アプリ</title>
+  <title>2語句学習アプリ</title>
 
   <!-- ライブラリ読み込み -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -37,7 +37,7 @@
   <script type="text/babel" data-presets="env,react">
     const { useEffect, useState } = React;
 
-    // ==== モード・グループ定義（★ mode3 追加）====
+    // ==== モード・グループ定義 ====
     const Modes = { VIEW: "VIEW", MCQ: "MCQ", FILL: "FILL" };
     const Groups = { DAY: "DAY", WEEK: "WEEK" };
 
@@ -191,7 +191,7 @@
       );
     }
 
-    // ========= モード1：閲覧 =========
+    // ========= モード1：閲覧（★ 読み を追加）=========
     function ModeView({ items }) {
       const [i, setI] = useState(0);
       const total = items.length;
@@ -218,10 +218,19 @@
               <div className="text-xs text-slate-500">語句</div>
               <div className="text-3xl md:text-4xl font-extrabold">{cur.term}</div>
             </div>
+
+            {cur.reading && (
+              <div>
+                <div className="text-xs text-slate-500">読み</div>
+                <div className="text-lg md:text-xl">{cur.reading}</div>
+              </div>
+            )}
+
             <div>
               <div className="text-xs text-slate-500">意味</div>
               <div className="text-lg md:text-xl">{cur.meaning}</div>
             </div>
+
             {cur.example && (
               <div>
                 <div className="text-xs text-slate-500">例文</div>
@@ -248,7 +257,7 @@
       );
     }
 
-    // ========= モード2：10択クイズ =========
+    // ========= モード2：10択クイズ（★ 不正解時に選択肢の意味も表示）=========
     function ModeMCQ({ items }) {
       const [order, setOrder] = useState(() =>
         shuffle(items.map((_, i) => i))
@@ -295,6 +304,8 @@
         setCorrect(null);
         setQIdx((v) => (v + 1 >= order.length ? 0 : v + 1));
       };
+
+      const chosenItem = selected !== null ? items[selected] : null;
 
       return (
         <div className="grid gap-6">
@@ -347,12 +358,35 @@
               <div className={"font-bold " + (correct ? "text-emerald-700" : "text-rose-700")}>
                 {correct ? "正解！" : "不正解"}
               </div>
-              {current.example && (
-                <div className="mt-2 text-sm text-slate-700">
-                  <span className="font-medium">例文：</span>
-                  {current.example}
+
+              <div className="mt-2 text-sm text-slate-700 space-y-1">
+                {/* 正解情報 */}
+                <div>
+                  正解：<span className="font-semibold">{current.term}</span>
                 </div>
-              )}
+                <div>
+                  正解の意味：{current.meaning}
+                </div>
+
+                {/* 間違えたときだけ、自分が選んだ語句の意味も表示 */}
+                {!correct && chosenItem && (
+                  <>
+                    <div className="mt-2">
+                      あなたが選んだ語句：<span className="font-semibold">{chosenItem.term}</span>
+                    </div>
+                    <div>
+                      その意味：{chosenItem.meaning}
+                    </div>
+                  </>
+                )}
+
+                {current.example && (
+                  <div className="mt-2">
+                    例文：{current.example}
+                  </div>
+                )}
+              </div>
+
               <div className="mt-3">
                 <button
                   className="px-4 py-2 rounded-xl bg-slate-900 text-white"
