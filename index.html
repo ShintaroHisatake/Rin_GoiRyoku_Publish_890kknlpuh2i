@@ -59,6 +59,7 @@
       return a;
     };
 
+    // ========= ルートコンポーネント =========
     function App() {
       const [data, setData] = useState(null);
       const [error, setError] = useState("");
@@ -71,9 +72,7 @@
       useEffect(() => {
         (async () => {
           try {
-            console.log("JSON読み込み開始");
             const j = await fetchJson("./data/week1.json");
-            console.log("JSON読み込み結果:", j);
             if (!j || !j.days || !Array.isArray(j.days)) {
               throw new Error("week1.json の形式が想定と違います（days 配列がありません）");
             }
@@ -107,12 +106,21 @@
       const days = data.days || [];
       const dayOptions = days.map((d) => ({ value: d.id, label: d.label }));
 
+      // WEEK のときは days 全部を連結（week.items が空でも動くように）
       let activeItems = [];
       if (group === Groups.WEEK) {
-        activeItems = (data.week && data.week.items) ? data.week.items : [];
+        if (data.week && Array.isArray(data.week.items) && data.week.items.length > 0) {
+          activeItems = data.week.items;
+        } else {
+          days.forEach((d) => {
+            if (Array.isArray(d.items)) {
+              activeItems = activeItems.concat(d.items);
+            }
+          });
+        }
       } else {
         const day = days.find((d) => d.id === dayId);
-        activeItems = day ? (day.items || []) : [];
+        activeItems = day && Array.isArray(day.items) ? day.items : [];
       }
 
       return (
@@ -167,6 +175,7 @@
       );
     }
 
+    // ========= モード1：閲覧 =========
     function ModeView({ items }) {
       const [i, setI] = useState(0);
       const total = items.length;
@@ -223,6 +232,7 @@
       );
     }
 
+    // ========= モード2：10択クイズ =========
     function ModeMCQ({ items }) {
       const [order, setOrder] = useState(() =>
         shuffle(items.map((_, i) => i))
@@ -248,12 +258,14 @@
       const currentIndex = order[qIdx];
       const current = items[currentIndex];
 
-      const optionIndices = React.useMemo(() => {
+      // useMemo をやめて、普通の関数で選択肢を計算（フック数を固定）
+      const buildOptions = () => {
         const indices = items.map((_, i) => i);
         const others = indices.filter((i) => i !== currentIndex);
         const distractors = shuffle(others).slice(0, 9);
-        return shuffle([currentIndex, ...distractors]);
-      }, [items, currentIndex]);
+        return shuffle([currentIndex].concat(distractors));
+      };
+      const optionIndices = buildOptions();
 
       const submit = (idx) => {
         if (correct !== null) return;
