@@ -1,17 +1,20 @@
 <!doctype html>
 <html lang="ja">
 <head>
-<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
 
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>語句学習アプリ</title>
+
+  <!-- ライブラリ読み込み -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
   <meta name="color-scheme" content="light only"/>
 </head>
 <body class="bg-slate-50">
@@ -26,7 +29,7 @@
 
     const fetchJson = async (path) => {
       const res = await fetch(path, { cache:"no-store" });
-      if (!res.ok) throw new Error(`${path} を取得できません（${res.status}）`);
+      if (!res.ok) throw new Error(path + " を取得できません（" + res.status + "）");
       return await res.json();
     };
 
@@ -38,10 +41,6 @@
       }
       return a;
     };
-
-    // ================== データ構造 ==================
-    // week1.json は { days:[ {id:"DAY1", label:"DAY 1", items:[{term, meaning, example}] }, ... ], week:{id:"WEEK1", items:[...] } }
-    // 例: scripts/extract_week1.py が出力（後述）
 
     // ================== ルート ==================
     function App(){
@@ -56,12 +55,14 @@
         (async()=>{
           try{
             setLoading(true);
-            // 生成したJSONを読む（パスはリポジトリ内の相対パス）
             const j = await fetchJson("./data/week1.json");
             setData(j);
           }catch(e){
+            console.error(e);
             setError(e.message || String(e));
-          }finally{ setLoading(false); }
+          }finally{
+            setLoading(false);
+          }
         })();
       },[]);
 
@@ -70,19 +71,28 @@
           <div className="max-w-3xl mx-auto p-6">
             <h1 className="text-2xl font-bold mb-3">読み込みエラー</h1>
             <p className="text-red-600 whitespace-pre-wrap">{error}</p>
-            <p className="mt-3 text-sm text-slate-600">先に <code>scripts/extract_week1.py</code> を実行して <code>data/week1.json</code> を作成してください。</p>
+            <p className="mt-3 text-sm text-slate-600">
+              リポジトリ内に <code>data/week1.json</code> が存在するか確認してください。
+            </p>
           </div>
         );
       }
+
       if (loading || !data){
         return <div className="p-6 text-slate-600">データ読み込み中…</div>;
       }
 
-      const dayOptions = data.days?.map(d=>({value:d.id, label:d.label})) ?? [];
-      const activeItems = useMemo(()=>{
-        if (group===Groups.WEEK) return data.week.items;
-        const day = data.days.find(d => d.id===dayId);
-        return day ? day.items : [];
+      // ★ optional chaining / null合体をやめた版
+      const dayOptions = data.days ? data.days.map(function(d){
+        return { value: d.id, label: d.label };
+      }) : [];
+
+      const activeItems = useMemo(function(){
+        if (group === Groups.WEEK) {
+          return data.week && data.week.items ? data.week.items : [];
+        }
+        const day = (data.days || []).find(function(d){ return d.id === dayId; });
+        return day ? (day.items || []) : [];
       }, [data, group, dayId]);
 
       return (
@@ -107,9 +117,11 @@
                   onChange={(e)=>setDayId(e.target.value)}
                   title="Day選択"
                 >
-                  {dayOptions.map(opt=>(
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
+                  {dayOptions.map(function(opt){
+                    return (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    );
+                  })}
                 </select>
               )}
 
@@ -172,8 +184,18 @@
           </div>
 
           <div className="flex items-center justify-between">
-            <button className="px-4 py-2 rounded-xl border bg-white" onClick={()=>setI(v=>v-1<0?total-1:v-1)}>← 前へ</button>
-            <button className="px-4 py-2 rounded-xl bg-slate-900 text-white" onClick={()=>setI(v=>v+1>=total?0:v+1)}>次へ →</button>
+            <button
+              className="px-4 py-2 rounded-xl border bg-white"
+              onClick={()=>setI(function(v){ return v-1<0 ? total-1 : v-1; })}
+            >
+              ← 前へ
+            </button>
+            <button
+              className="px-4 py-2 rounded-xl bg-slate-900 text-white"
+              onClick={()=>setI(function(v){ return v+1>=total ? 0 : v+1; })}
+            >
+              次へ →
+            </button>
           </div>
         </div>
       );
@@ -181,17 +203,20 @@
 
     // ================== モード2：10択クイズ ==================
     function ModeMCQ({items}){
-      const pool = useMemo(()=> items, [items]); // 出題範囲
+      const pool = useMemo(function(){ return items; }, [items]); // 出題範囲
       const total = pool.length;
-      const [order, setOrder] = useState(()=> shuffle(pool.map((_,i)=>i)));
+      const [order, setOrder] = useState(()=> shuffle(pool.map(function(_,i){ return i; })));
       const [qIdx, setQIdx] = useState(0);
       const [selected, setSelected] = useState(null);
       const [correct, setCorrect] = useState(null);
       const [score, setScore] = useState(0);
 
-      useEffect(()=>{ // itemsが変わったら初期化
-        setOrder(shuffle(items.map((_,i)=>i)));
-        setQIdx(0); setSelected(null); setCorrect(null); setScore(0);
+      useEffect(()=>{
+        setOrder(shuffle(items.map(function(_,i){ return i; })));
+        setQIdx(0);
+        setSelected(null);
+        setCorrect(null);
+        setScore(0);
       }, [items]);
 
       if (!total) return <div className="text-slate-600">この範囲に項目がありません。</div>;
@@ -199,10 +224,10 @@
       const current = pool[order[qIdx]];
 
       // 選択肢の作成（語句10個）
-      const optionIndices = useMemo(()=>{
-        const others = pool.map((_,i)=>i).filter(i=>i!==order[qIdx]);
+      const optionIndices = useMemo(function(){
+        const others = pool.map(function(_,i){ return i; }).filter(function(i){ return i!==order[qIdx]; });
         const distractors = shuffle(others).slice(0, Math.max(0, 9)); // 残り9
-        return shuffle([order[qIdx], ...distractors]);
+        return shuffle([order[qIdx]].concat(distractors));
       }, [order, qIdx, pool]);
 
       const submit = (choiceIdx) => {
@@ -210,19 +235,22 @@
         setSelected(choiceIdx);
         const ok = choiceIdx === order[qIdx];
         setCorrect(ok);
-        if (ok) setScore(s=>s+1);
+        if (ok) setScore(function(s){ return s+1; });
       };
 
       const nextQ = () => {
-        setSelected(null); setCorrect(null);
-        setQIdx(v => v+1>=order.length ? 0 : v+1);
+        setSelected(null);
+        setCorrect(null);
+        setQIdx(function(v){ return v+1>=order.length ? 0 : v+1; });
       };
 
       return (
         <div className="grid gap-6">
           <div className="flex items-center gap-2 text-sm">
             <span className="px-2 py-1 rounded-full bg-slate-100">問題 {qIdx+1} / {total}</span>
-            <span className="ml-auto px-2 py-1 rounded-full bg-slate-900 text-white">正答 {score} / {qIdx + (correct!==null?1:0)}</span>
+            <span className="ml-auto px-2 py-1 rounded-full bg-slate-900 text-white">
+              正答 {score} / {qIdx + (correct!==null?1:0)}
+            </span>
           </div>
 
           <div>
@@ -231,22 +259,29 @@
           </div>
 
           <ol className="grid md:grid-cols-2 gap-3">
-            {optionIndices.map((idx, i) => {
+            {optionIndices.map(function(idx, i){
               const term = pool[idx].term;
               const isChosen = selected!==null && idx===selected;
               const isAnswer = selected!==null && idx===order[qIdx];
+              const baseClass = "w-full text-left px-4 py-3 rounded-xl border transition ";
+              let cls = baseClass;
+              if (isAnswer) {
+                cls += "bg-emerald-50 border-emerald-300";
+              } else if (isChosen) {
+                cls += "bg-rose-50 border-rose-300";
+              } else {
+                cls += "bg-white hover:bg-slate-50 border-slate-300";
+              }
               return (
                 <li key={i}>
                   <button
-                    className={
-                      "w-full text-left px-4 py-3 rounded-xl border transition " +
-                      (isAnswer ? "bg-emerald-50 border-emerald-300" :
-                       isChosen ? "bg-rose-50 border-rose-300" : "bg-white hover:bg-slate-50 border-slate-300")
-                    }
+                    className={cls}
                     onClick={()=>submit(idx)}
                     disabled={selected!==null}
                   >
-                    <span className="mr-2 font-mono text-slate-500">{String.fromCharCode(65+i)}.</span>
+                    <span className="mr-2 font-mono text-slate-500">
+                      {String.fromCharCode(65+i)}.
+                    </span>
                     <span className="font-semibold">{term}</span>
                   </button>
                 </li>
@@ -265,7 +300,9 @@
                 </div>
               )}
               <div className="mt-3">
-                <button className="px-4 py-2 rounded-xl bg-slate-900 text-white" onClick={nextQ}>次の問題へ →</button>
+                <button className="px-4 py-2 rounded-xl bg-slate-900 text-white" onClick={nextQ}>
+                  次の問題へ →
+                </button>
               </div>
             </div>
           )}
