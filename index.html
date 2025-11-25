@@ -349,15 +349,11 @@
       const currentIndex = order[qIdx];
       const current = safeItems[currentIndex];
 
-      // 選択肢（10個）作成
-      const optionIndices = useMemo(() => {
-        const allIdx = safeItems.map((_, i) => i);
-        const others = allIdx.filter(i => i !== currentIndex);
-        const needed = Math.max(0, 9); // 残り9個
-        const distractors = shuffle(others).slice(0, Math.min(needed, others.length));
-        const list = [currentIndex].concat(distractors);
-        return shuffle(list);
-      }, [safeItems, currentIndex]);
+      // 選択肢（10個まで）を作成（useMemo をやめてシンプルに）
+      const allIdx = safeItems.map((_, i) => i);
+      const others = allIdx.filter(i => i !== currentIndex);
+      const distractors = shuffle(others).slice(0, Math.min(9, others.length)); // 残り最大9
+      const optionIndices = shuffle([currentIndex].concat(distractors));
 
       const handleSelect = (idx) => {
         if (selectedIdx !== null) return; // 既に回答済み
@@ -374,7 +370,7 @@
         setQIdx(v => (v + 1 >= order.length ? 0 : v + 1));
       };
 
-      // 回答後に「次の問題へ」ボタンへフォーカス → Enter で遷移可能
+      // 回答後に「次の問題へ」ボタンへフォーカス → Enter で遷移しやすくする
       useEffect(() => {
         if (selectedIdx !== null && nextButtonRef.current) {
           nextButtonRef.current.focus();
@@ -402,7 +398,8 @@
 
           <ol className="grid md:grid-cols-2 gap-3">
             {optionIndices.map((idx, i) => {
-              const term = safeItems[idx].term;
+              const item = safeItems[idx];
+              const term = item ? item.term : "";
               const isChosen = selectedIdx !== null && idx === selectedIdx;
               const isAnswer = selectedIdx !== null && idx === currentIndex;
               let className = "w-full text-left px-4 py-3 rounded-xl border transition ";
@@ -483,7 +480,7 @@
                   className="px-4 py-2 rounded-xl bg-slate-900 text-white hover:opacity-90"
                   onClick={handleNext}
                 >
-                  次の問題へ →（Enter でも可）
+                  次の問題へ →
                 </button>
               </div>
             </div>
